@@ -1,5 +1,6 @@
 import { embedQuery } from "./embeddings";
 import { getChatModel, getOpenAIClient } from "./openai";
+import { withRetry } from "./retry";
 import type { ChatApiResponse, RetrievalMatch, SiteIndex, Source } from "./types";
 import { searchIndex } from "./vector-store";
 
@@ -53,26 +54,36 @@ export async function answerQuestion(question: string, siteIndex: SiteIndex): Pr
   const context = buildContext(matches);
   const sources = uniqueSources(matches);
 
-  const completion = await client.chat.completions.create({
-    model,
-    temperature: 0,
-    messages: [
-      {
-        role: "system",
-        content: [
-          "Answer only from the provided website excerpts.",
-          "Do not use outside knowledge.",
-          "If the answer is missing, say so clearly.",
-          "Cite sources using the provided source URLs.",
-          "Keep the answer concise and useful."
-        ].join("\n")
-      },
-      {
-        role: "user",
-        content: [`Question: ${question}`, "", "Website excerpts:", context].join("\n")
+  // Wrap in retry — transient 429/503 errors are retried with exponential backoff
+  const completion = await withRetry(
+    () =>
+      client.chat.completions.create({
+        model,
+        temperature: 0,
+        messages: [
+          {
+            role: "system",
+            content: [
+              "Answer only from the provided website excerpts.",
+              "Do not use outside knowledge.",
+              "If the answer is missing, say so clearly.",
+              "Cite sources using the provided source URLs.",
+              "Keep the answer concise and useful."
+            ].join("\n")
+          },
+          {
+            role: "user",
+            content: [`Question: ${question}`, "", "Website excerpts:", context].join("\n")
+          }
+        ]
+      }),
+    {
+      maxRetries: 3,
+      onRetry: (_error, attempt) => {
+        console.warn(`⚠️ Chat completion retry #${attempt}`);
       }
-    ]
-  });
+    }
+  );
 
   const answer = completion.choices[0]?.message?.content?.trim() || "I could not find that information in the crawled website content.";
 

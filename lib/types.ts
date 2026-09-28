@@ -49,6 +49,8 @@ export type RetrievalMatch = {
 export type Source = {
   url: string;
   title: string;
+  /** The relevant passage that was used to answer. Optional for backward compat. */
+  excerpt?: string;
 };
 
 export type CrawlApiResponse = {
@@ -58,7 +60,6 @@ export type CrawlApiResponse = {
   chunksCreated: number;
   errors: string[];
   warnings: string[];
-  siteIndex: SiteIndex;
 };
 
 export type ChatApiResponse = {
