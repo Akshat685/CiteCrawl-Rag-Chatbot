@@ -10,7 +10,7 @@ WORKDIR /app
 COPY package.json package-lock.json ./
 
 # Install exact dependency versions from lockfile
-RUN npm ci
+RUN npm ci --legacy-peer-deps
 
 
 # ============================================================

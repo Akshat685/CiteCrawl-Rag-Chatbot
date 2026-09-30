@@ -43,7 +43,7 @@ export default function HomePage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ url })
       });
-      const data = await response.json() as CrawlApiResponse & { error?: string };
+      const data = (await response.json()) as CrawlApiResponse & { error?: string };
 
       if (!response.ok) {
         throw new Error(data.error ?? "Failed to crawl site.");
@@ -61,13 +61,10 @@ export default function HomePage() {
   async function handleAsk(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const trimmedQuestion = question.trim();
-    if (!trimmedQuestion || !siteId) {
-      return;
-    }
+    if (!trimmedQuestion || !siteId) return;
 
     setChatError(null);
     setQuestion("");
-    // Add user message and a placeholder assistant message
     setMessages((current) => [
       ...current,
       { role: "user", content: trimmedQuestion },
@@ -87,7 +84,6 @@ export default function HomePage() {
         throw new Error(errorData.error ?? "Failed to answer question.");
       }
 
-      // ── Read SSE stream ────────────────────────────────────────
       const reader = response.body?.getReader();
       if (!reader) throw new Error("No response stream.");
 
@@ -99,41 +95,28 @@ export default function HomePage() {
         if (done) break;
 
         buffer += decoder.decode(value, { stream: true });
-
-        // Process complete SSE events from buffer
         const lines = buffer.split("\n");
-        buffer = lines.pop() ?? ""; // Keep incomplete line in buffer
+        buffer = lines.pop() ?? "";
 
         for (const line of lines) {
           if (!line.startsWith("data: ")) continue;
-          const payload = line.slice(6);
-
           try {
-            const event = JSON.parse(payload);
-
+            const event = JSON.parse(line.slice(6));
             if (event.type === "token") {
-              // Append token to the last (assistant) message
               setMessages((current) => {
                 const updated = [...current];
                 const last = updated[updated.length - 1];
-                if (last && last.role === "assistant") {
-                  updated[updated.length - 1] = {
-                    ...last,
-                    content: last.content + event.content
-                  };
+                if (last?.role === "assistant") {
+                  updated[updated.length - 1] = { ...last, content: last.content + event.content };
                 }
                 return updated;
               });
             } else if (event.type === "done") {
-              // Attach sources to the last message
               setMessages((current) => {
                 const updated = [...current];
                 const last = updated[updated.length - 1];
-                if (last && last.role === "assistant") {
-                  updated[updated.length - 1] = {
-                    ...last,
-                    sources: event.sources
-                  };
+                if (last?.role === "assistant") {
+                  updated[updated.length - 1] = { ...last, sources: event.sources };
                 }
                 return updated;
               });
@@ -141,18 +124,15 @@ export default function HomePage() {
               setChatError(event.error);
             }
           } catch {
-            // Ignore malformed JSON lines
+            /* skip malformed */
           }
         }
       }
     } catch (error) {
       setChatError(error instanceof Error ? error.message : "Failed to answer question.");
-      // Remove the empty placeholder assistant message on error
       setMessages((current) => {
         const last = current[current.length - 1];
-        if (last?.role === "assistant" && !last.content) {
-          return current.slice(0, -1);
-        }
+        if (last?.role === "assistant" && !last.content) return current.slice(0, -1);
         return current;
       });
     } finally {
@@ -161,176 +141,227 @@ export default function HomePage() {
   }
 
   return (
-    <main className="min-h-screen bg-slate-50 px-4 py-8 text-slate-950">
-      <div className="mx-auto flex max-w-5xl flex-col gap-6">
-        <section className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
-          <p className="text-sm font-bold uppercase tracking-[0.2em] text-slate-500">Crawl + RAG</p>
-          <h1 className="mt-3 text-4xl font-bold tracking-tight">Chat with a Website</h1>
-          <p className="mt-3 max-w-2xl text-slate-600">
-            Enter a website URL, crawl up to 10 pages within the same hostname, index the readable content, and ask
-            grounded questions with source links.
+    <main className="min-h-screen px-4 py-8 md:py-12">
+      <div className="mx-auto flex max-w-4xl flex-col gap-6">
+
+        {/* ── Hero ──────────────────────────────────────────────── */}
+        <section className="glass-card p-8 animate-hero-enter">
+          <span className="tag-eyebrow">Crawl + RAG</span>
+          <h1 className="mt-4 text-4xl md:text-5xl font-bold tracking-tight gradient-text leading-tight">
+            Chat with any Website
+          </h1>
+          <p className="mt-4 max-w-xl text-base leading-relaxed" style={{ color: "var(--text-2)" }}>
+            Paste a URL, crawl up to 10 pages, and ask grounded questions.
+            Every answer comes with source links back to the original content.
           </p>
         </section>
 
-        <section className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
+        {/* ── Crawl Form ───────────────────────────────────────── */}
+        <section className="glass-card p-6 animate-section-enter" style={{ animationDelay: "150ms" }}>
           <form onSubmit={handleCrawl} className="flex flex-col gap-4 md:flex-row">
             <input
               value={url}
-              onChange={(event) => setUrl(event.target.value)}
+              onChange={(e) => setUrl(e.target.value)}
               type="url"
               required
               placeholder="https://example.com"
               aria-label="Website URL to crawl"
-              className="min-h-12 flex-1 rounded-2xl border border-slate-300 px-4 outline-none transition focus:border-slate-950 focus:ring-4 focus:ring-slate-200"
+              className="input-glass flex-1"
             />
             <button
               type="submit"
               disabled={isCrawling}
-              className="min-h-12 rounded-2xl bg-slate-950 px-6 font-semibold text-white transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-60"
+              className={`btn-primary ${isCrawling ? "animate-pulse-glow" : ""}`}
             >
-              {isCrawling ? "Crawling..." : "Crawl site"}
+              {isCrawling ? (
+                <span className="flex items-center gap-2">
+                  <Spinner />
+                  Crawling…
+                </span>
+              ) : (
+                "Crawl site"
+              )}
             </button>
           </form>
 
-          <p className="mt-3 text-sm text-slate-500">Defaults: max pages 10, max depth 2, polite delay between requests.</p>
+          <p className="mt-3 text-xs" style={{ color: "var(--text-3)" }}>
+            Max 10 pages · Depth 2 · Polite delay between requests
+          </p>
 
-          {crawlError ? (
-            <div role="alert" className="mt-4 rounded-2xl border border-red-200 bg-red-50 p-4 text-sm text-red-700">{crawlError}</div>
-          ) : null}
+          {crawlError && (
+            <div role="alert" className="banner-error mt-4">{crawlError}</div>
+          )}
 
-          {crawlResult ? (
-            <div className="mt-4 grid gap-3 md:grid-cols-3">
-              <StatusCard label="Pages crawled" value={crawlResult.pagesCrawled.toString()} />
-              <StatusCard label="Chunks created" value={crawlResult.chunksCreated.toString()} />
-              <StatusCard label="Indexed site" value={new URL(crawlResult.rootUrl).hostname} />
+          {crawlResult && (
+            <div className="mt-5 grid gap-3 md:grid-cols-3">
+              <StatusCard label="Pages crawled" value={crawlResult.pagesCrawled.toString()} delay={0} />
+              <StatusCard label="Chunks created" value={crawlResult.chunksCreated.toString()} delay={1} />
+              <StatusCard label="Indexed site" value={new URL(crawlResult.rootUrl).hostname} delay={2} />
             </div>
-          ) : null}
+          )}
 
-          {crawlResult && (crawlResult.warnings.length > 0 || crawlResult.errors.length > 0) ? (
-            <details className="mt-4 rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">
-              <summary className="cursor-pointer font-semibold">Crawl warnings and errors</summary>
-              <ul className="mt-3 list-disc space-y-1 pl-5">
-                {[...crawlResult.warnings, ...crawlResult.errors].map((item, index) => (
-                  <li key={`${item}-${index}`}>{item}</li>
+          {crawlResult && (crawlResult.warnings.length > 0 || crawlResult.errors.length > 0) && (
+            <details className="banner-warning mt-4">
+              <summary className="cursor-pointer font-semibold text-sm">
+                Crawl warnings and errors ({crawlResult.warnings.length + crawlResult.errors.length})
+              </summary>
+              <ul className="mt-3 list-disc space-y-1 pl-5 text-sm" style={{ color: "var(--amber-text)", opacity: 0.8 }}>
+                {[...crawlResult.warnings, ...crawlResult.errors].map((item, i) => (
+                  <li key={`${item}-${i}`}>{item}</li>
                 ))}
               </ul>
             </details>
-          ) : null}
+          )}
         </section>
 
-        {crawlResult ? (
-          <section className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
-            <div className="flex items-start justify-between gap-4">
-              <div>
-                <h2 className="text-2xl font-bold">Ask questions</h2>
-                <p className="mt-1 text-sm text-slate-500">Answers are constrained to the retrieved website excerpts.</p>
-              </div>
+        {/* ── Chat Section ─────────────────────────────────────── */}
+        {crawlResult && (
+          <section className="glass-card p-6 animate-section-enter" style={{ animationDelay: "300ms" }}>
+            <div>
+              <h2 className="text-2xl font-bold">Ask questions</h2>
+              <p className="mt-1 text-sm" style={{ color: "var(--text-3)" }}>
+                Answers are grounded in the crawled content. Sources are cited.
+              </p>
             </div>
 
             <div
               ref={chatContainerRef}
               role="log"
               aria-live="polite"
-              className="mt-6 flex min-h-80 max-h-[500px] flex-col gap-4 overflow-y-auto rounded-2xl border border-slate-200 bg-slate-50 p-4"
+              className="chat-container mt-5 flex min-h-[320px] max-h-[500px] flex-col gap-4 overflow-y-auto p-4"
             >
               {messages.length === 0 ? (
-                <div className="flex flex-1 items-center justify-center text-center text-slate-500">
-                  Try asking what the site says about pricing, features, policies, docs, or contact information.
+                <div className="flex flex-1 items-center justify-center text-center text-sm" style={{ color: "var(--text-3)" }}>
+                  <div>
+                    <div className="text-3xl mb-3">💬</div>
+                    Ask about pricing, features, docs, policies, or anything on the site.
+                  </div>
                 </div>
               ) : (
-                messages.map((message, index) => <MessageBubble key={index} message={message} />)
+                messages.map((msg, i) => (
+                  <MessageBubble
+                    key={i}
+                    message={msg}
+                    isStreaming={isAnswering && i === messages.length - 1 && msg.role === "assistant" && !msg.sources}
+                  />
+                ))
               )}
-              {isAnswering && messages[messages.length - 1]?.content === "" ? (
-                <div className="text-sm text-slate-500" aria-live="polite">Searching excerpts and drafting a grounded answer...</div>
-              ) : null}
             </div>
 
-            {chatError ? (
-              <div role="alert" className="mt-4 rounded-2xl border border-red-200 bg-red-50 p-4 text-sm text-red-700">{chatError}</div>
-            ) : null}
+            {chatError && (
+              <div role="alert" className="banner-error mt-4">{chatError}</div>
+            )}
 
             <form onSubmit={handleAsk} className="mt-4 flex flex-col gap-3 md:flex-row">
               <input
                 value={question}
-                onChange={(event) => setQuestion(event.target.value)}
-                placeholder="Ask a question about the crawled site..."
+                onChange={(e) => setQuestion(e.target.value)}
+                placeholder="Ask a question about the crawled site…"
                 aria-label="Your question"
-                className="min-h-12 flex-1 rounded-2xl border border-slate-300 px-4 outline-none transition focus:border-slate-950 focus:ring-4 focus:ring-slate-200"
+                className="input-glass flex-1"
               />
               <button
                 type="submit"
                 disabled={isAnswering || !question.trim()}
-                className="min-h-12 rounded-2xl bg-slate-950 px-6 font-semibold text-white transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-60"
+                className="btn-primary"
               >
-                {isAnswering ? "Answering..." : "Ask"}
+                {isAnswering ? (
+                  <span className="flex items-center gap-2">
+                    <Spinner />
+                    Thinking…
+                  </span>
+                ) : (
+                  "Ask"
+                )}
               </button>
             </form>
           </section>
-        ) : null}
+        )}
       </div>
+
+      {/* Footer */}
+      <footer className="mt-12 pb-6 text-center text-xs" style={{ color: "var(--text-3)" }}>
+        Built with Next.js · Gemini · RAG pipeline
+      </footer>
     </main>
   );
 }
 
-function StatusCard({ label, value }: { label: string; value: string }) {
+/* ── Sub-Components ─────────────────────────────────────────── */
+
+function Spinner() {
   return (
-    <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
-      <div className="text-sm text-slate-500">{label}</div>
-      <div className="mt-1 truncate text-2xl font-bold">{value}</div>
+    <svg className="animate-spin h-4 w-4" viewBox="0 0 24 24" fill="none">
+      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="3" />
+      <path
+        className="opacity-75"
+        fill="currentColor"
+        d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"
+      />
+    </svg>
+  );
+}
+
+function StatusCard({ label, value, delay }: { label: string; value: string; delay: number }) {
+  const delayClass = delay === 0 ? "" : delay === 1 ? "animate-delay-1" : "animate-delay-2";
+
+  return (
+    <div className={`stat-card animate-fade-up ${delayClass}`}>
+      <div className="text-xs font-medium" style={{ color: "var(--text-3)" }}>{label}</div>
+      <div className="mt-1 text-2xl font-bold gradient-text-accent truncate">{value}</div>
     </div>
   );
 }
 
-function MessageBubble({ message }: { message: ChatMessage }) {
+function MessageBubble({ message, isStreaming }: { message: ChatMessage; isStreaming?: boolean }) {
   const isUser = message.role === "user";
   const [expandedExcerpts, setExpandedExcerpts] = useState<Set<string>>(new Set());
 
   function toggleExcerpt(url: string) {
     setExpandedExcerpts((prev) => {
       const next = new Set(prev);
-      if (next.has(url)) {
-        next.delete(url);
-      } else {
-        next.add(url);
-      }
+      next.has(url) ? next.delete(url) : next.add(url);
       return next;
     });
   }
 
   return (
-    <div className={`flex ${isUser ? "justify-end" : "justify-start"}`}>
-      <div className={`max-w-3xl rounded-2xl p-4 ${isUser ? "bg-slate-950 text-white" : "bg-white text-slate-900 shadow-sm"}`}>
-        <div className="whitespace-pre-wrap text-sm leading-6">{message.content}</div>
-        {!isUser && message.sources && message.sources.length > 0 ? (
-          <div className="mt-4 border-t border-slate-200 pt-3">
-            <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">Sources</div>
+    <div className={`flex ${isUser ? "justify-end" : "justify-start"} ${isUser ? "animate-slide-right" : "animate-slide-left"}`}>
+      <div className={`max-w-[85%] md:max-w-2xl p-4 ${isUser ? "bubble-user" : "bubble-assistant"}`}>
+        <div className={`whitespace-pre-wrap text-sm leading-relaxed ${isStreaming ? "streaming-caret" : ""}`}>
+          {message.content || (isStreaming ? "" : "…")}
+        </div>
+
+        {!isUser && message.sources && message.sources.length > 0 && (
+          <div className="mt-4 pt-3" style={{ borderTop: "1px solid var(--border)" }}>
+            <div className="text-xs font-semibold uppercase tracking-wider" style={{ color: "var(--text-3)" }}>
+              Sources
+            </div>
             <ul className="mt-2 space-y-2 text-sm">
               {message.sources.map((source) => (
                 <li key={source.url}>
-                  <a href={source.url} target="_blank" rel="noreferrer" className="text-blue-700 underline underline-offset-2">
+                  <a href={source.url} target="_blank" rel="noreferrer" className="source-link">
                     {source.title || source.url}
                   </a>
-                  {source.excerpt ? (
+                  {source.excerpt && (
                     <>
                       <button
                         onClick={() => toggleExcerpt(source.url)}
-                        className="ml-2 text-xs text-slate-400 hover:text-slate-600 transition"
+                        className="excerpt-toggle ml-2"
                         aria-label={expandedExcerpts.has(source.url) ? "Hide excerpt" : "Show excerpt"}
                       >
                         {expandedExcerpts.has(source.url) ? "▾ hide" : "▸ excerpt"}
                       </button>
-                      {expandedExcerpts.has(source.url) ? (
-                        <blockquote className="mt-1 border-l-2 border-slate-200 pl-3 text-xs text-slate-500 leading-5">
-                          {source.excerpt}
-                        </blockquote>
-                      ) : null}
+                      {expandedExcerpts.has(source.url) && (
+                        <blockquote className="excerpt-block">{source.excerpt}</blockquote>
+                      )}
                     </>
-                  ) : null}
+                  )}
                 </li>
               ))}
             </ul>
           </div>
-        ) : null}
+        )}
       </div>
     </div>
   );
